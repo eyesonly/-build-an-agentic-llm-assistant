@@ -63,8 +63,103 @@ export class ServerlessLlmAssistantStack extends cdk.Stack {
     );
 
     // Placeholder for Lab 4, step 2.2 - Put the database resource definition here.
+// -----------------------------------------------------------------------
+// Add an Amazon Aurora PostgreSQL database with PGvector for semantic search.
+// Create an Aurora PostgreSQL database, to serve as the semantic search
+// engine using the pgvector extension https://github.com/pgvector/pgvector
+// https://aws.amazon.com/about-aws/whats-new/2023/07/amazon-aurora-postgresql-pgvector-vector-storage-similarity-search/
+const AgentDBSecret = rds.Credentials.fromGeneratedSecret("AgentDBAdmin");
+
+const AgentDB = new rds.DatabaseCluster(this, "AgentDB", {
+  engine: rds.DatabaseClusterEngine.auroraPostgres({
+    // We use this specific db version because it comes with pgvector extension.
+    version: rds.AuroraPostgresEngineVersion.VER_15_3,
+  }),
+  defaultDatabaseName: AGENT_DB_NAME,
+  storageEncrypted: true,
+  // Switch to cdk.RemovalPolicy.RETAIN when installing production
+  // to avoid accidental data deletions.
+  removalPolicy: cdk.RemovalPolicy.DESTROY,
+  // We attach the credentials created above, to the database.
+  credentials: AgentDBSecret,
+  // Writer must be provided.
+  writer: rds.ClusterInstance.serverlessV2("ServerlessInstanceWriter"),
+  // Put the database in the vpc created above.
+  vpc: vpc.vpc,
+  // Put the database in the private subnet of the VPC.
+  vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED }
+});
 
     // Placeholder Lab 4. Step 4.1 - configure sagemaker access to the database.
+        // -----------------------------------------------------------------------
+    // Create a security group to allow access to the DB from a SageMaker processing job
+    // which will be used to index embedding vectors.
+    const processingSecurityGroup = new ec2.SecurityGroup(
+      this,
+      "ProcessingSecurityGroup",
+      {
+        vpc: vpc.vpc,
+        // Allow outbound traffic to the Aurora security group on PostgreSQL port
+        allowAllOutbound: true,
+      }
+    );
+  
+    // Allow connection to SageMaker processing jobs security group on the specified port
+    AgentDB.connections.allowTo(
+      processingSecurityGroup,
+      ec2.Port.tcp(5432),
+      "Allow outbound traffic to RDS from SageMaker jobs"
+    );
+  
+    // Allow inbound traffic to the RDS security group from the SageMaker processing security group
+    AgentDB.connections.allowFrom(
+      processingSecurityGroup,
+      ec2.Port.tcp(5432),
+      "Allow inbound traffic from SageMaker to RDS"
+    );
+  
+    // Store the security group ID in Parameter Store
+    const securityGroupParameterName =
+      "/AgenticLLMAssistantWorkshop/SMProcessingJobSecurityGroupId";
+    const sagemaker_security_group_name_parameter = new ssm.StringParameter(
+      this,
+      "ProcessingSecurityGroupIdParameter",
+      {
+        parameterName: securityGroupParameterName,
+        stringValue: processingSecurityGroup.securityGroupId,
+      }
+    );
+  
+    // -----------------------------------------------------------------------
+    // Save the required credentials and parameter that would allow SageMaker Jobs
+    // to access the database and add the required IAM permissions to a managed
+    // IAM policy that must be attached to the SageMaker execution role.
+    const sagemaker_db_secret_arn_parameter = new ssm.StringParameter(
+      this,
+      "DBSecretArnParameter",
+      {
+        parameterName: "/AgenticLLMAssistantWorkshop/DBSecretARN",
+        stringValue: AgentDB.secret?.secretArn as string,
+      }
+    );
+  
+    // Retrieve the subnet IDs from the VPC
+    const subnetIds = vpc.vpc.selectSubnets({
+      subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+    }).subnetIds;
+  
+    // Convert the subnet IDs to a JSON format
+    const subnetIdsJson = JSON.stringify(subnetIds);
+    // Store the JSON data as an SSM parameter
+    const subnetIdsParameter = new ssm.StringParameter(
+      this,
+      "SubnetIdsParameter",
+      {
+        parameterName: "/AgenticLLMAssistantWorkshop/SubnetIds",
+        stringValue: subnetIdsJson,
+      }
+    );
+
 
     // -----------------------------------------------------------------------
     // Add a DynamoDB table to store chat history per session id.
@@ -111,17 +206,23 @@ export class ServerlessLlmAssistantStack extends cdk.Stack {
         description: "Lambda function with bedrock access created via CDK",
         timeout: cdk.Duration.minutes(5),
         memorySize: 2048,
-        // vpc: vpc.vpc,
+        vpc: vpc.vpc,
         environment: {
           BEDROCK_REGION_PARAMETER: ssm_bedrock_region_parameter.parameterName,
           LLM_MODEL_ID_PARAMETER: ssm_llm_model_id_parameter.parameterName,
           CHAT_MESSAGE_HISTORY_TABLE: ChatMessageHistoryTable.tableName,
-          // AGENT_DB_SECRET_ID: AgentDB.secret?.secretArn as string
+          AGENT_DB_SECRET_ID: AgentDB.secret?.secretArn as string
         },
       }
     );
 
     // Placeholder Step 2.4 - grant Lambda permission to access db credentials
+    // Allow Lambda to read the secret for Aurora DB connection.
+AgentDB.secret?.grantRead(agent_executor_lambda);
+
+// Allow network access to/from Lambda
+AgentDB.connections.allowDefaultPortFrom(agent_executor_lambda);
+
 
     // Allow Lambda to read SSM parameters.
     ssm_bedrock_region_parameter.grantRead(agent_executor_lambda);
@@ -183,6 +284,9 @@ export class ServerlessLlmAssistantStack extends cdk.Stack {
               ssm_llm_model_id_parameter.parameterArn,
               agentLambdaNameParameter.parameterArn,
               agentDataBucketParameter.parameterArn,
+              sagemaker_security_group_name_parameter.parameterArn,
+              sagemaker_db_secret_arn_parameter.parameterArn,
+              subnetIdsParameter.parameterArn,
             ],
           }),
           new iam.PolicyStatement({
@@ -206,6 +310,15 @@ export class ServerlessLlmAssistantStack extends cdk.Stack {
               agent_executor_lambda.functionArn,
             ]
           }),
+          
+          new iam.PolicyStatement({
+            actions: ["secretsmanager:GetSecretValue"],
+            resources: [
+              // Add permission to get only the DB secret
+              AgentDB.secret?.secretArn as string,
+            ]
+          })
+          
         ],
       }
     );
