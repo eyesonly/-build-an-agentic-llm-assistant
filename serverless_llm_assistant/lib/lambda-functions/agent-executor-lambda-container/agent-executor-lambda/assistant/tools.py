@@ -14,3 +14,25 @@ claude_llm = Bedrock(
     client=bedrock_runtime,
     model_kwargs={"max_tokens_to_sample": 500, "temperature": 0.0},
 )
+
+search = DuckDuckGoSearchRun()
+custom_calculator = CustomCalculatorTool()
+
+LLM_AGENT_TOOLS = [
+    Tool(
+        name="Search",
+        func=search.invoke,
+        description=(
+            "Use when you need to answer questions about current events, news or people."
+            " You should ask targeted questions."
+        ),
+    ),
+    Tool(
+        name="Calculator",
+        func=custom_calculator,
+        description=(
+            "Always Use this tool when you need to answer math questions."
+            " The input to Calculator can only be a valid math expression, such as 55/3."
+        ),
+    ),
+]

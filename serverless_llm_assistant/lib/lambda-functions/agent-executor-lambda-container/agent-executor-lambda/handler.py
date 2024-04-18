@@ -9,7 +9,10 @@ from langchain_community.chat_message_histories import DynamoDBChatMessageHistor
 
 from assistant.config import AgenticAssistantConfig
 from assistant.prompts import CLAUDE_PROMPT
-## placeholder for lab 3, step 4.2, replace this with imports as instructed
+
+from langchain.agents import AgentExecutor, create_react_agent
+from assistant.prompts import CLAUDE_AGENT_PROMPT
+from assistant.tools import LLM_AGENT_TOOLS
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -52,8 +55,39 @@ def get_basic_chatbot_conversation_chain(
     return conversation_chain
 
 
-## placeholder for lab 3, step 4.3, replace this with the get_agentic_chatbot_conversation_chain helper.
+def get_agentic_chatbot_conversation_chain(
+    user_input, session_id, clean_history, verbose=True
+):
+    message_history = DynamoDBChatMessageHistory(
+        table_name=config.chat_message_history_table_name, session_id=session_id
+    )
+    if clean_history:
+        message_history.clear()
 
+    memory = ConversationBufferMemory(
+        memory_key="chat_history",
+        chat_memory=message_history,
+        ai_prefix="AI",
+        # change the human_prefix from Human to something else
+        # to not conflict with Human keyword in Anthropic Claude model.
+        human_prefix="Hu",
+        return_messages=False,
+    )
+
+    agent = create_react_agent(
+        llm=claude_llm,
+        tools=LLM_AGENT_TOOLS,
+        prompt=CLAUDE_AGENT_PROMPT,
+    )
+
+    agent_chain = AgentExecutor.from_agent_and_tools(
+        agent=agent,
+        tools=LLM_AGENT_TOOLS,
+        verbose=verbose,
+        memory=memory,
+        handle_parsing_errors="Check your output and make sure it conforms!",
+    )
+    return agent_chain
 
 def lambda_handler(event, context):
     logger.info(event)
@@ -66,15 +100,11 @@ def lambda_handler(event, context):
     if chatbot_type == "basic":
         conversation_chain = get_basic_chatbot_conversation_chain(
             user_input, session_id, clean_history
-        ).predict
+        ).invoke
     elif chatbot_type == "agentic":
-        return {
-            "statusCode": 200,
-            "response": (
-                f"The agentic mode is not supported yet. Extend the code as instructed"
-                " in lab 3 to add it."
-            ),
-        }
+        conversation_chain = get_agentic_chatbot_conversation_chain(
+            user_input, session_id, clean_history
+        ).invoke
     else:
         return {
             "statusCode": 200,
@@ -85,10 +115,17 @@ def lambda_handler(event, context):
         }
 
     try:
-        response = conversation_chain(input=user_input)
+        response = conversation_chain({"input": user_input})
+
+        if chatbot_type == "basic":
+            response = response["response"]
+        elif chatbot_type == "agentic":
+            response = response["output"]
+
     except Exception:
         response = (
-            "Unable to respond due to an internal issue." " Please try again later"
+            "Unable to respond due to an internal issue."
+            " Please try again later"
         )
         print(traceback.format_exc())
 

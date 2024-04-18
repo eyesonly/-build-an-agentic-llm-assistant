@@ -23,7 +23,7 @@ export class ServerlessLlmAssistantStack extends cdk.Stack {
     // -----------------------------------------------------------------------
     // VPC Construct
     // Create subnets and VPC endpoints
-    // const vpc = new Vpc(this, "Vpc");
+    const vpc = new Vpc(this, "Vpc");
 
     // -----------------------------------------------------------------------
     // Create relevant SSM parameters
