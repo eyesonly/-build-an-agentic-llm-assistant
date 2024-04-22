@@ -4,7 +4,7 @@ from langchain.llms.bedrock import Bedrock
 from langchain_community.tools import DuckDuckGoSearchRun
 from .calculator import CustomCalculatorTool
 from .config import AgenticAssistantConfig
-from .rag import get_rag_chain
+# from .rag import get_rag_chain
 
 config = AgenticAssistantConfig()
 bedrock_runtime = boto3.client("bedrock-runtime", region_name=config.bedrock_region)
@@ -17,7 +17,7 @@ claude_llm = Bedrock(
 
 search = DuckDuckGoSearchRun()
 custom_calculator = CustomCalculatorTool()
-rag_qa_chain = get_rag_chain(config, claude_llm, bedrock_runtime)
+# rag_qa_chain = get_rag_chain(config, claude_llm, bedrock_runtime)
 
 LLM_AGENT_TOOLS = [
     Tool(
@@ -35,15 +35,15 @@ LLM_AGENT_TOOLS = [
             "Always Use this tool when you need to answer math questions."
             " The input to Calculator can only be a valid math expression, such as 55/3."
         ),
-    ),
-    Tool(
-        name="SemanticSearch",
-        func=lambda query: rag_qa_chain({"question": query}),
-        description=(
-            "Use when you are asked questions about financial reports of companies."
-            " The Input should be a correctly formatted question."
-        ),
     )
+    # Tool(
+    #     name="SemanticSearch",
+    #     func=lambda query: rag_qa_chain({"question": query}),
+    #     description=(
+    #         "Use when you are asked questions about financial reports of companies."
+    #         " The Input should be a correctly formatted question."
+    #     ),
+    # )
 ]
 
 # # This module will be edited in Lab 03 to add the agent tools.
