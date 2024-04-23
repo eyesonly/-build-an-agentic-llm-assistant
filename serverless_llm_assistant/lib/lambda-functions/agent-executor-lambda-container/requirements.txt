@@ -6,3 +6,4 @@ langchain-community
 duckduckgo-search
 psycopg2-binary
 pgvector
+numexpr

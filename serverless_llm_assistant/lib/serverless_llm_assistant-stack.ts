@@ -286,7 +286,7 @@ AgentDB.connections.allowDefaultPortFrom(agent_executor_lambda);
               agentDataBucketParameter.parameterArn,
               sagemaker_security_group_name_parameter.parameterArn,
               sagemaker_db_secret_arn_parameter.parameterArn,
-              subnetIdsParameter.parameterArn,
+              subnetIdsParameter.parameterArn
             ],
           }),
           new iam.PolicyStatement({
