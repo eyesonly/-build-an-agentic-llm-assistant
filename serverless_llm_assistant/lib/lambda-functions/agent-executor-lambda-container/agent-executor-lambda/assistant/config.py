@@ -57,8 +57,8 @@ class AgenticAssistantConfig:
         num_sql_table_sample_rows: int = 2
 
         sql_engine = sqlalchemy.create_engine(sqlalchemy_connection_url)
-        entities_db = SQLDatabase(
-            engine=sql_engine,
-            include_tables=SQL_TABLE_NAMES,
-            sample_rows_in_table_info=num_sql_table_sample_rows,
-        )
+        # entities_db = SQLDatabase(
+        #     engine=sql_engine,
+        #     include_tables=SQL_TABLE_NAMES,
+        #     sample_rows_in_table_info=num_sql_table_sample_rows,
+        # )
