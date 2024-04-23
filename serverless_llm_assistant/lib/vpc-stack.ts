@@ -12,6 +12,7 @@ export class Vpc extends Construct {
 
   constructor(scope: Construct, id: string) {
     super(scope, id);
+    
 
     const vpc = new ec2.Vpc(this, 'VPC', {
       maxAzs: 2,
